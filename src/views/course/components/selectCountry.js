@@ -1,6 +1,6 @@
 import { Table, TableOptions } from 'components-path'
 import { Select } from 'antd'
-import dataCountries from 'utils/functions/dataCountries'
+import { countries as dataCountries } from './dataCountries';
 
 export const SelectCountries = ({ countries = [], onChange }) => {
   const countriesList = countries.map((country, index) => {

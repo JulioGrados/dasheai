@@ -55,11 +55,6 @@ export const EnrolList = () => {
       ...SearchRow('courseName')
     },
     {
-      title: 'Nombres Completos',
-      dataIndex: 'linkedName',
-      ...SearchRow('linkedName')
-    },
-    {
       title: 'Email',
       dataIndex: 'linkedEmail',
       ...SearchRow('linkedEmail')
@@ -127,15 +122,11 @@ export const EnrolList = () => {
           onSelect={handleSelect}
           value={course && course._id}
           style={{ width: '100%' }}
-          filterOption={
-            (input, option) =>
-              option.props.children.toLowerCase().indexOf(input.toLowerCase()) >= 0
-          }
           allowClear
         >
           {courses.map(course => (
             <Select.Option key={course._id} value={course._id}>
-              {course.name}
+              [{course.moodleId}] {course.name}
             </Select.Option>
           ))}
         </Select>
@@ -168,7 +159,6 @@ export const EnrolList = () => {
                   <p>Nombre: {enrol && enrol.course.name }</p>
                 </div>
               <Button type='primary' onClick={() => {
-                setEnrol('')
                 changeVisibleEnrol(false)
               }}>
                   Cerrar

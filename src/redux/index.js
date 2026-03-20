@@ -32,6 +32,7 @@ import order from './order'
 import migration from './migration'
 import timetable from './timetable'
 import charge from './charge'
+import blog from './blog'
 
 const reducers = combineReducers({
   log,
@@ -62,7 +63,8 @@ const reducers = combineReducers({
   order,
   migration,
   timetable,
-  charge
+  charge,
+  blog
 })
 
 const middleware = [createMiddleware, thunk]

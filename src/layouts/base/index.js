@@ -389,6 +389,14 @@ export const Base = ({ current, currentMenu, children }) => {
               </a>
             </Link>
           </Menu.Item>
+          <Menu.Item key='blog'>
+            <Link href='/blogs'>
+              <a>
+                <Icon type='read' />
+                <span>Blog</span>
+              </a>
+            </Link>
+          </Menu.Item>
           <SubMenu
             key='migrations'
             onTitleClick={() => Router.push('/migraciones/certificados')}

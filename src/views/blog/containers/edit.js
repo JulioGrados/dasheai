@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/router'
 import { useDispatch } from 'react-redux'
+import { Spin } from 'antd'
 
 import { BlogForm } from '../components/form'
 import { getBlog, editBlog } from 'redux-path/blog'
@@ -22,6 +23,14 @@ const EditBlog = () => {
   const handleSubmit = (data, redirect, callback) => {
     const urlRedirect = redirect ? '/blogs' : ''
     updateBlog(router.query.id, data, urlRedirect, callback)
+  }
+
+  if (blogState.loading || !blogState.current) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
+        <Spin size='large' tip='Cargando blog...' />
+      </div>
+    )
   }
 
   return (

@@ -114,7 +114,7 @@ const FormTemplate = ({ blog, loading, onSubmit, form, title }) => {
             <FormRight>
               <Form.Item label='Contenido del Blog'>
                 <EditorQuill
-                  value={data.content}
+                  value={data?.content || ''}
                   onChange={content => changeData('content', content)}
                   placeholder='Escribe el contenido completo del blog aquí...'
                 />

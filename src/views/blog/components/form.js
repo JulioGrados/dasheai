@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import moment from 'moment'
+import toSlug from 'slug'
 import {
   Form,
   Input,
@@ -38,6 +39,12 @@ const FormTemplate = ({ blog, loading, onSubmit, form, title }) => {
     }
     changeAllData(blog)
   }, [blog])
+
+  const changeSlug = e => {
+    const newSlug = toSlug(e.target.value, { lower: true })
+    form.setFieldsValue({ slug: newSlug })
+    changeData('slug', newSlug)
+  }
 
   const handleSubmit = redirect => {
     form.validateFields((err, values) => {
@@ -88,7 +95,18 @@ const FormTemplate = ({ blog, loading, onSubmit, form, title }) => {
                     }
                   ],
                   initialValue: blog && blog.title
-                })(<Input placeholder='Título del blog' />)}
+                })(<Input placeholder='Título del blog' onChange={changeSlug} />)}
+              </Form.Item>
+              <Form.Item label='Slug (URL amigable)'>
+                {getFieldDecorator('slug', {
+                  rules: [
+                    {
+                      required: true,
+                      message: 'Ingresa el slug del blog.'
+                    }
+                  ],
+                  initialValue: data.slug || undefined
+                })(<Input placeholder='slug-del-blog' />)}
               </Form.Item>
               <Form.Item label='Asunto'>
                 {getFieldDecorator('subject', {

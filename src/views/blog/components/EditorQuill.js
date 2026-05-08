@@ -6,16 +6,12 @@ import 'quill-better-table/dist/quill-better-table.css'
 
 const BACKSPACE_KEY_CODE = 8
 
-// next/dynamic does not forward refs automatically — wrap with forwardRef
 const ReactQuill = dynamic(
   async () => {
     const { default: RQ } = await import('react-quill')
     const { default: QBT } = await import('quill-better-table')
     const { default: Quill } = await import('quill')
 
-    // Quill v1 indexes keyboard bindings by numeric key code (8 for Backspace),
-    // but quill-better-table looks them up by the string 'Backspace'.
-    // We wrap the module to add the alias before the parent constructor runs.
     class BetterTablePatched extends QBT {
       constructor (quill, options) {
         if (quill.keyboard && !quill.keyboard.bindings['Backspace']) {
@@ -43,7 +39,6 @@ const formats = [
   'list', 'bullet', 'indent',
   'direction', 'align',
   'link', 'image', 'video',
-  // quill-better-table formats
   'table-cell-line', 'table', 'table-row', 'table-body',
   'table-col', 'table-col-group', 'table-container', 'table-view'
 ]
@@ -53,8 +48,15 @@ export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el conteni
   const [tableRows, setTableRows] = useState(3)
   const [tableCols, setTableCols] = useState(3)
   const [modules, setModules] = useState(null)
-  // Ref on a plain div — always works regardless of next/dynamic ref forwarding
   const wrapperRef = useRef(null)
+
+  // stableValue: lo que pasamos a ReactQuill como prop value.
+  // Solo se actualiza cuando el contenido cambia DESDE AFUERA del editor
+  // (por ejemplo, al cargar un post existente). Nunca se actualiza en
+  // respuesta a nuestro propio onChange, lo que rompe el bucle infinito:
+  //   insertTable → onChange → parent state → value prop → setEditorContents → text-change → loop
+  const [stableValue, setStableValue] = useState(value || '')
+  const lastReported = useRef(value || '')
 
   useEffect(() => {
     setModules({
@@ -96,9 +98,25 @@ export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el conteni
     })
   }, [])
 
+  // Detecta cambios de value que vienen del padre (no de nuestro onChange)
+  // y los aplica al editor. Si el cambio vino de nuestro propio onChange,
+  // lastReported.current === value y no hacemos nada.
+  useEffect(() => {
+    if (value !== lastReported.current) {
+      lastReported.current = value || ''
+      setStableValue(value || '')
+    }
+  }, [value])
+
+  const handleChange = (content) => {
+    lastReported.current = content
+    // NO actualizamos stableValue aquí — ReactQuill mantiene su propio estado interno.
+    // El padre recibe el nuevo contenido pero ReactQuill no se re-renderiza.
+    onChange(content)
+  }
+
   const insertTable = () => {
     if (!wrapperRef.current) return
-    // Quill stores its instance directly on the .ql-container DOM element
     const container = wrapperRef.current.querySelector('.ql-container')
     if (!container || !container.__quill) return
     const tableModule = container.__quill.getModule('better-table')
@@ -186,8 +204,8 @@ export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el conteni
               ? (
                 <ReactQuill
                   theme='snow'
-                  value={value || ''}
-                  onChange={onChange}
+                  value={stableValue}
+                  onChange={handleChange}
                   modules={modules}
                   formats={formats}
                   placeholder={placeholder}

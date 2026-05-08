@@ -42,7 +42,10 @@ const formats = [
   'blockquote', 'code-block',
   'list', 'bullet', 'indent',
   'direction', 'align',
-  'link', 'image', 'video'
+  'link', 'image', 'video',
+  // quill-better-table formats
+  'table-cell-line', 'table', 'table-row', 'table-body',
+  'table-col', 'table-col-group', 'table-container', 'table-view'
 ]
 
 export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el contenido del blog...' }) => {

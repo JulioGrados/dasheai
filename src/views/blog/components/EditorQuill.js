@@ -4,18 +4,31 @@ import { Switch } from 'antd'
 import 'react-quill/dist/quill.snow.css'
 import 'quill-better-table/dist/quill-better-table.css'
 
-// Cargado una sola vez cuando el módulo dinámico resuelve
-let _QuillBetterTable = null
+const BACKSPACE_KEY_CODE = 8
 
 const ReactQuill = dynamic(
   async () => {
     const { default: RQ } = await import('react-quill')
     const { default: QBT } = await import('quill-better-table')
     const { default: Quill } = await import('quill')
-    if (!Quill.imports['modules/better-table']) {
-      Quill.register({ 'modules/better-table': QBT }, true)
+
+    // Quill v1 indexes keyboard bindings by numeric key code (8 for Backspace),
+    // but quill-better-table looks them up by the string 'Backspace'.
+    // We wrap the module to add the alias before the parent constructor runs.
+    class BetterTablePatched extends QBT {
+      constructor (quill, options) {
+        if (quill.keyboard && !quill.keyboard.bindings['Backspace']) {
+          quill.keyboard.bindings['Backspace'] = quill.keyboard.bindings[BACKSPACE_KEY_CODE] || []
+        }
+        super(quill, options)
+      }
     }
-    _QuillBetterTable = QBT
+    BetterTablePatched.keyboardBindings = QBT.keyboardBindings
+
+    if (!Quill.imports['modules/better-table']) {
+      Quill.register({ 'modules/better-table': BetterTablePatched }, true)
+    }
+
     return RQ
   },
   { ssr: false }
@@ -38,50 +51,43 @@ export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el conteni
   const [modules, setModules] = useState(null)
   const quillRef = useRef(null)
 
-  // Los módulos se construyen después de que quill-better-table carga,
-  // para incluir keyboardBindings (sin esto ocurre el error 'pop')
   useEffect(() => {
-    import('quill-better-table').then(({ default: QBT }) => {
-      setModules({
-        toolbar: [
-          [{ header: [1, 2, 3, 4, 5, 6, false] }],
-          [{ font: [] }],
-          [{ size: ['small', false, 'large', 'huge'] }],
-          ['bold', 'italic', 'underline', 'strike'],
-          [{ color: [] }, { background: [] }],
-          [{ script: 'sub' }, { script: 'super' }],
-          ['blockquote', 'code-block'],
-          [{ list: 'ordered' }, { list: 'bullet' }],
-          [{ indent: '-1' }, { indent: '+1' }],
-          [{ direction: 'rtl' }],
-          [{ align: [] }],
-          ['link', 'image', 'video'],
-          ['clean']
-        ],
-        'better-table': {
-          operationMenu: {
-            items: {
-              insertColumnRight: { text: 'Insertar columna derecha' },
-              insertColumnLeft: { text: 'Insertar columna izquierda' },
-              insertRowUp: { text: 'Insertar fila arriba' },
-              insertRowDown: { text: 'Insertar fila abajo' },
-              mergeCells: { text: 'Combinar celdas' },
-              unmergeCells: { text: 'Separar celdas' },
-              deleteColumn: { text: 'Eliminar columna' },
-              deleteRow: { text: 'Eliminar fila' },
-              deleteTable: { text: 'Eliminar tabla' }
-            }
+    setModules({
+      toolbar: [
+        [{ header: [1, 2, 3, 4, 5, 6, false] }],
+        [{ font: [] }],
+        [{ size: ['small', false, 'large', 'huge'] }],
+        ['bold', 'italic', 'underline', 'strike'],
+        [{ color: [] }, { background: [] }],
+        [{ script: 'sub' }, { script: 'super' }],
+        ['blockquote', 'code-block'],
+        [{ list: 'ordered' }, { list: 'bullet' }],
+        [{ indent: '-1' }, { indent: '+1' }],
+        [{ direction: 'rtl' }],
+        [{ align: [] }],
+        ['link', 'image', 'video'],
+        ['clean']
+      ],
+      'better-table': {
+        operationMenu: {
+          items: {
+            insertColumnRight: { text: 'Insertar columna derecha' },
+            insertColumnLeft: { text: 'Insertar columna izquierda' },
+            insertRowUp: { text: 'Insertar fila arriba' },
+            insertRowDown: { text: 'Insertar fila abajo' },
+            mergeCells: { text: 'Combinar celdas' },
+            unmergeCells: { text: 'Separar celdas' },
+            deleteColumn: { text: 'Eliminar columna' },
+            deleteRow: { text: 'Eliminar fila' },
+            deleteTable: { text: 'Eliminar tabla' }
           }
-        },
-        keyboard: {
-          bindings: QBT.keyboardBindings
-        },
-        history: {
-          delay: 1000,
-          maxStack: 50,
-          userOnly: true
         }
-      })
+      },
+      history: {
+        delay: 1000,
+        maxStack: 50,
+        userOnly: true
+      }
     })
   }, [])
 
@@ -170,19 +176,20 @@ export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el conteni
             </button>
             <span style={{ fontSize: '11px', color: '#999' }}>Clic derecho sobre la tabla para más opciones</span>
           </div>
-          {modules && (
-            <ReactQuill
-              ref={quillRef}
-              theme='snow'
-              value={value || ''}
-              onChange={onChange}
-              modules={modules}
-              formats={formats}
-              placeholder={placeholder}
-              style={{ minHeight: '300px' }}
-            />
-          )}
-          {!modules && <p style={{ color: '#999', fontSize: '13px' }}>Cargando editor...</p>}
+          {modules
+            ? (
+              <ReactQuill
+                ref={quillRef}
+                theme='snow'
+                value={value || ''}
+                onChange={onChange}
+                modules={modules}
+                formats={formats}
+                placeholder={placeholder}
+                style={{ minHeight: '300px' }}
+              />
+              )
+            : <p style={{ color: '#999', fontSize: '13px' }}>Cargando editor...</p>}
         </>
       )}
 

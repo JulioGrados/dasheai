@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, forwardRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import { Switch } from 'antd'
 import 'react-quill/dist/quill.snow.css'
@@ -30,7 +30,7 @@ const ReactQuill = dynamic(
       Quill.register({ 'modules/better-table': BetterTablePatched }, true)
     }
 
-    return forwardRef((props, ref) => <RQ ref={ref} {...props} />)
+    return RQ
   },
   { ssr: false }
 )
@@ -50,7 +50,8 @@ export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el conteni
   const [tableRows, setTableRows] = useState(3)
   const [tableCols, setTableCols] = useState(3)
   const [modules, setModules] = useState(null)
-  const quillRef = useRef(null)
+  // Ref on a plain div — always works regardless of next/dynamic ref forwarding
+  const wrapperRef = useRef(null)
 
   useEffect(() => {
     setModules({
@@ -93,12 +94,12 @@ export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el conteni
   }, [])
 
   const insertTable = () => {
-    if (!quillRef.current) return
-    const editor = quillRef.current.getEditor()
-    const tableModule = editor.getModule('better-table')
-    if (tableModule) {
-      tableModule.insertTable(tableRows, tableCols)
-    }
+    if (!wrapperRef.current) return
+    // Quill stores its instance directly on the .ql-container DOM element
+    const container = wrapperRef.current.querySelector('.ql-container')
+    if (!container || !container.__quill) return
+    const tableModule = container.__quill.getModule('better-table')
+    if (tableModule) tableModule.insertTable(tableRows, tableCols)
   }
 
   const handleHtmlChange = (e) => {
@@ -177,20 +178,21 @@ export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el conteni
             </button>
             <span style={{ fontSize: '11px', color: '#999' }}>Clic derecho sobre la tabla para más opciones</span>
           </div>
-          {modules
-            ? (
-              <ReactQuill
-                ref={quillRef}
-                theme='snow'
-                value={value || ''}
-                onChange={onChange}
-                modules={modules}
-                formats={formats}
-                placeholder={placeholder}
-                style={{ minHeight: '300px' }}
-              />
-              )
-            : <p style={{ color: '#999', fontSize: '13px' }}>Cargando editor...</p>}
+          <div ref={wrapperRef}>
+            {modules
+              ? (
+                <ReactQuill
+                  theme='snow'
+                  value={value || ''}
+                  onChange={onChange}
+                  modules={modules}
+                  formats={formats}
+                  placeholder={placeholder}
+                  style={{ minHeight: '300px' }}
+                />
+                )
+              : <p style={{ color: '#999', fontSize: '13px' }}>Cargando editor...</p>}
+          </div>
         </>
       )}
 

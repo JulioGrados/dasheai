@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, forwardRef } from 'react'
 import dynamic from 'next/dynamic'
 import { Switch } from 'antd'
 import 'react-quill/dist/quill.snow.css'
@@ -6,6 +6,7 @@ import 'quill-better-table/dist/quill-better-table.css'
 
 const BACKSPACE_KEY_CODE = 8
 
+// next/dynamic does not forward refs automatically — wrap with forwardRef
 const ReactQuill = dynamic(
   async () => {
     const { default: RQ } = await import('react-quill')
@@ -29,7 +30,7 @@ const ReactQuill = dynamic(
       Quill.register({ 'modules/better-table': BetterTablePatched }, true)
     }
 
-    return RQ
+    return forwardRef((props, ref) => <RQ ref={ref} {...props} />)
   },
   { ssr: false }
 )

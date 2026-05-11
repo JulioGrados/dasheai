@@ -4,28 +4,18 @@ import { Switch } from 'antd'
 import 'react-quill/dist/quill.snow.css'
 import 'quill-better-table/dist/quill-better-table.css'
 
-const BACKSPACE_KEY_CODE = 8
-
 const ReactQuill = dynamic(
   async () => {
     const { default: RQ } = await import('react-quill')
     const { default: QBT } = await import('quill-better-table')
     const { default: Quill } = await import('quill')
 
-    class BetterTablePatched extends QBT {
-      constructor (quill, options) {
-        if (quill.keyboard && !quill.keyboard.bindings['Backspace']) {
-          // .slice() gives QBT a copy so its pop()/splice() don't mutate
-          // Quill v1's real bindings stored under numeric key code 8
-          quill.keyboard.bindings['Backspace'] = (quill.keyboard.bindings[BACKSPACE_KEY_CODE] || []).slice()
-        }
-        super(quill, options)
-      }
-    }
-    BetterTablePatched.keyboardBindings = QBT.keyboardBindings
-
+    // Registering QBT as a module type causes Quill to call QBT.register() (static),
+    // which registers all table blots so table HTML persists in the editor.
+    // We deliberately omit 'better-table' from the instance modules config so the
+    // instance constructor never runs — it is the source of the addRange loop.
     if (!Quill.imports['modules/better-table']) {
-      Quill.register({ 'modules/better-table': BetterTablePatched }, true)
+      Quill.register({ 'modules/better-table': QBT }, true)
     }
 
     return RQ
@@ -48,7 +38,28 @@ const formats = [
 const getQuill = (wrapperRef) => {
   if (!wrapperRef.current) return null
   const container = wrapperRef.current.querySelector('.ql-container')
-  return container && container.__quill ? container.__quill : null
+  return (container && container.__quill) ? container.__quill : null
+}
+
+const generateId = () => Math.random().toString(36).substr(2, 9)
+
+const buildTableHTML = (rows, cols) => {
+  let html = '<table class="quill-better-table"><colgroup>'
+  for (let c = 0; c < cols; c++) html += '<col width="150">'
+  html += '</colgroup><tbody>'
+  for (let r = 0; r < rows; r++) {
+    const rowId = `row-${generateId()}`
+    html += `<tr data-row="${rowId}">`
+    for (let c = 0; c < cols; c++) {
+      const cellId = `cell-${generateId()}`
+      html += `<td data-row="${rowId}" rowspan="1" colspan="1">`
+      html += `<p class="qlbt-cell-line" data-row="${rowId}" data-cell="${cellId}" data-rowspan="1" data-colspan="1"><br></p>`
+      html += '</td>'
+    }
+    html += '</tr>'
+  }
+  html += '</tbody></table>'
+  return html
 }
 
 export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el contenido del blog...' }) => {
@@ -60,8 +71,7 @@ export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el conteni
   const isInsertingTable = useRef(false)
 
   // lockedValue never changes after mount — ReactQuill never gets a new value prop,
-  // so it never calls setContents() in response to our own onChange cycle.
-  // This eliminates the onChange → parent state → value prop → setContents → text-change loop.
+  // eliminating the onChange → parent re-render → setContents → text-change loop.
   const [lockedValue] = useState(value || '')
   const lastReported = useRef(value || '')
 
@@ -82,21 +92,8 @@ export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el conteni
         ['link', 'image', 'video'],
         ['clean']
       ],
-      'better-table': {
-        operationMenu: {
-          items: {
-            insertColumnRight: { text: 'Insertar columna derecha' },
-            insertColumnLeft: { text: 'Insertar columna izquierda' },
-            insertRowUp: { text: 'Insertar fila arriba' },
-            insertRowDown: { text: 'Insertar fila abajo' },
-            mergeCells: { text: 'Combinar celdas' },
-            unmergeCells: { text: 'Separar celdas' },
-            deleteColumn: { text: 'Eliminar columna' },
-            deleteRow: { text: 'Eliminar fila' },
-            deleteTable: { text: 'Eliminar tabla' }
-          }
-        }
-      },
+      // 'better-table' intentionally omitted — its constructor causes addRange errors.
+      // Blots are registered via QBT.register() (static) when the module type is registered above.
       history: {
         delay: 1000,
         maxStack: 50,
@@ -105,8 +102,8 @@ export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el conteni
     })
   }, [])
 
-  // Handles external value changes (e.g. navigating to a different post).
-  // Updates Quill directly instead of via the value prop, so ReactQuill never re-renders.
+  // External value changes (loading a different post) — update Quill directly,
+  // never via the value prop so ReactQuill never re-renders.
   useEffect(() => {
     const normalized = value || ''
     if (normalized === lastReported.current) return
@@ -126,17 +123,19 @@ export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el conteni
   const insertTable = () => {
     const quill = getQuill(wrapperRef)
     if (!quill) return
-    const tableModule = quill.getModule('better-table')
-    if (!tableModule) return
+
+    const html = buildTableHTML(tableRows, tableCols)
+    const range = quill.getSelection(true)
+    const index = range ? range.index : quill.getLength()
 
     isInsertingTable.current = true
-    tableModule.insertTable(tableRows, tableCols)
+    quill.clipboard.dangerouslyPasteHTML(index, html)
 
     setTimeout(() => {
       isInsertingTable.current = false
-      const html = quill.root.innerHTML
-      lastReported.current = html
-      onChange(html)
+      const finalHtml = quill.root.innerHTML
+      lastReported.current = finalHtml
+      onChange(finalHtml)
     }, 100)
   }
 
@@ -214,7 +213,6 @@ export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el conteni
             >
               + Tabla
             </button>
-            <span style={{ fontSize: '11px', color: '#999' }}>Clic derecho sobre la tabla para más opciones</span>
           </div>
           <div ref={wrapperRef}>
             {modules

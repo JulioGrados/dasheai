@@ -117,16 +117,18 @@ export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el conteni
     const tableModule = quill.getModule('better-table')
     if (!tableModule) return
 
+    // Block handleChange during insertTable so intermediate optimize-cycle
+    // text-change events don't trigger parent re-renders before we're done.
     isInsertingTable.current = true
     tableModule.insertTable(tableRows, tableCols)
+    // updateContents + optimize run synchronously, so the table DOM is fully
+    // built the moment insertTable() returns. Capture immediately.
+    isInsertingTable.current = false
 
-    setTimeout(() => {
-      isInsertingTable.current = false
-      const finalHtml = quill.root.innerHTML
-      setEditorHtml(finalHtml)
-      lastReported.current = finalHtml
-      onChange(finalHtml)
-    }, 150)
+    const finalHtml = quill.root.innerHTML
+    setEditorHtml(finalHtml)
+    lastReported.current = finalHtml
+    onChange(finalHtml)
   }
 
   const handleHtmlChange = (e) => {

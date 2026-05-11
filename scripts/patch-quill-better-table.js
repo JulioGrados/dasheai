@@ -27,6 +27,41 @@ if (!fs.existsSync(qbtPath)) {
   }
 }
 
+// ── Patch 3: quill-better-table — matchTableCell missing '\n' push ────────────────
+// matchTableHeader has `if (lines.indexOf('\n') < 0) lines.push('\n')` but matchTableCell
+// doesn't. Without it, plain-text <td> cells (no embedded newline) never get
+// the table-cell-line Delta attribute and render as plain text after paste.
+
+if (!fs.existsSync(qbtPath)) {
+  // already logged above
+} else {
+  let content = fs.readFileSync(qbtPath, 'utf8')
+
+  // matchTableCell splits op.insert at '\n' chars, pushes tailStr, then reduces via forEach.
+  // The forEach uses op.attributes (unique to matchTableCell vs matchTableHeader) so this
+  // target string is only found once in the file.
+  const buggyMatchCell =
+    `      if (tailStr) lines.push(tailStr);\n` +
+    `      lines.forEach(text => {\n` +
+    `        text === '\\n' ? newDelta.insert('\\n', op.attributes) : newDelta.insert(text, _omit(op.attributes, ['table', 'table-cell-line']));`
+
+  const fixedMatchCell =
+    `      if (tailStr) lines.push(tailStr);\n` +
+    `      if (lines.indexOf('\\n') < 0) { lines.push('\\n'); }\n` +
+    `      lines.forEach(text => {\n` +
+    `        text === '\\n' ? newDelta.insert('\\n', op.attributes) : newDelta.insert(text, _omit(op.attributes, ['table', 'table-cell-line']));`
+
+  if (content.includes(buggyMatchCell)) {
+    content = content.replace(buggyMatchCell, fixedMatchCell)
+    fs.writeFileSync(qbtPath, content, 'utf8')
+    console.log('✓ quill-better-table patched: matchTableCell missing newline fixed.')
+  } else if (content.includes("if (lines.indexOf('\\n') < 0) { lines.push('\\n'); }")) {
+    console.log('✓ quill-better-table matchTableCell already patched.')
+  } else {
+    console.warn('⚠ quill-better-table: matchTableCell patch target not found, runtime fix will apply.')
+  }
+}
+
 // ── Patch 2: quill — addRange without try-catch causes rAF loop on invalid ranges ─
 const quillPath = path.join(__dirname, '../node_modules/quill/dist/quill.js')
 
@@ -50,7 +85,8 @@ if (!fs.existsSync(quillPath)) {
     content = content.replace(buggyAddRange, fixedAddRange)
     fs.writeFileSync(quillPath, content, 'utf8')
     console.log('✓ quill patched: addRange wrapped in try-catch.')
-  } else if (content.includes('isConnected !== false')) {
+  } else if (content.includes('isConnected !== false') ||
+             content.includes("try { selection.addRange(range); } catch (_) {}")) {
     console.log('✓ quill already patched.')
   } else {
     console.warn('⚠ quill: patch target not found, may need manual review.')

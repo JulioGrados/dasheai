@@ -27,6 +27,25 @@ const ReactQuill = dynamic(
         if (blot && blot.scope == null) blot.scope = BLOCK_BLOT_SCOPE
       })
 
+      // QBT's optimize() calls this.enforceAllowedChildren() — a Parchment v2 method
+      // that doesn't exist in Parchment v1. Add it to both Container and Block prototypes
+      // so all QBT blots (Container-based and Block-based) can call it without throwing.
+      const enforceAllowedChildren = function () {
+        if (!this.statics.allowedChildren) return
+        this.children.forEach(child => {
+          if (this.statics.allowedChildren.some(allowed => child instanceof allowed)) return
+          child.unwrap()
+        })
+      }
+      const Container = Quill.import('blots/container')
+      const Block = Quill.import('blots/block')
+      if (typeof Container.prototype.enforceAllowedChildren !== 'function') {
+        Container.prototype.enforceAllowedChildren = enforceAllowedChildren
+      }
+      if (typeof Block.prototype.enforceAllowedChildren !== 'function') {
+        Block.prototype.enforceAllowedChildren = enforceAllowedChildren
+      }
+
       Quill.register({ 'modules/better-table': QBT }, true)
     }
 

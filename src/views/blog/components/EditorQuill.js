@@ -15,8 +15,8 @@ const ReactQuill = dynamic(
     class BetterTablePatched extends QBT {
       constructor (quill, options) {
         if (quill.keyboard && !quill.keyboard.bindings['Backspace']) {
-          // Use .slice() to give QBT a COPY — prevents its pop()/splice()
-          // from mutating Quill v1's real bindings stored under numeric key 8
+          // .slice() gives QBT a copy so its pop()/splice() don't mutate
+          // Quill v1's real bindings stored under numeric key code 8
           quill.keyboard.bindings['Backspace'] = (quill.keyboard.bindings[BACKSPACE_KEY_CODE] || []).slice()
         }
         super(quill, options)
@@ -45,6 +45,12 @@ const formats = [
   'table-col', 'table-col-group', 'table-container', 'table-view'
 ]
 
+const getQuill = (wrapperRef) => {
+  if (!wrapperRef.current) return null
+  const container = wrapperRef.current.querySelector('.ql-container')
+  return container && container.__quill ? container.__quill : null
+}
+
 export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el contenido del blog...' }) => {
   const [isHtmlMode, setIsHtmlMode] = useState(false)
   const [tableRows, setTableRows] = useState(3)
@@ -53,12 +59,10 @@ export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el conteni
   const wrapperRef = useRef(null)
   const isInsertingTable = useRef(false)
 
-  // stableValue: lo que pasamos a ReactQuill como prop value.
-  // Solo se actualiza cuando el contenido cambia DESDE AFUERA del editor
-  // (por ejemplo, al cargar un post existente). Nunca se actualiza en
-  // respuesta a nuestro propio onChange, lo que rompe el bucle infinito:
-  //   insertTable → onChange → parent state → value prop → setEditorContents → text-change → loop
-  const [stableValue, setStableValue] = useState(value || '')
+  // lockedValue never changes after mount — ReactQuill never gets a new value prop,
+  // so it never calls setContents() in response to our own onChange cycle.
+  // This eliminates the onChange → parent state → value prop → setContents → text-change loop.
+  const [lockedValue] = useState(value || '')
   const lastReported = useRef(value || '')
 
   useEffect(() => {
@@ -101,12 +105,16 @@ export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el conteni
     })
   }, [])
 
+  // Handles external value changes (e.g. navigating to a different post).
+  // Updates Quill directly instead of via the value prop, so ReactQuill never re-renders.
   useEffect(() => {
     const normalized = value || ''
-    if (normalized !== lastReported.current) {
-      lastReported.current = normalized
-      setStableValue(normalized)
-    }
+    if (normalized === lastReported.current) return
+    lastReported.current = normalized
+    const quill = getQuill(wrapperRef)
+    if (!quill) return
+    const delta = quill.clipboard.convert(normalized)
+    quill.setContents(delta)
   }, [value])
 
   const handleChange = (content) => {
@@ -116,18 +124,14 @@ export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el conteni
   }
 
   const insertTable = () => {
-    if (!wrapperRef.current) return
-    const container = wrapperRef.current.querySelector('.ql-container')
-    if (!container || !container.__quill) return
-    const quill = container.__quill
+    const quill = getQuill(wrapperRef)
+    if (!quill) return
     const tableModule = quill.getModule('better-table')
     if (!tableModule) return
 
     isInsertingTable.current = true
     tableModule.insertTable(tableRows, tableCols)
 
-    // Report final state once after table operations settle,
-    // avoiding the insertTable → onChange → value prop → loop cycle
     setTimeout(() => {
       isInsertingTable.current = false
       const html = quill.root.innerHTML
@@ -217,7 +221,7 @@ export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el conteni
               ? (
                 <ReactQuill
                   theme='snow'
-                  value={stableValue}
+                  value={lockedValue}
                   onChange={handleChange}
                   modules={modules}
                   formats={formats}

@@ -15,7 +15,9 @@ const ReactQuill = dynamic(
     class BetterTablePatched extends QBT {
       constructor (quill, options) {
         if (quill.keyboard && !quill.keyboard.bindings['Backspace']) {
-          quill.keyboard.bindings['Backspace'] = quill.keyboard.bindings[BACKSPACE_KEY_CODE] || []
+          // Use .slice() to give QBT a COPY — prevents its pop()/splice()
+          // from mutating Quill v1's real bindings stored under numeric key 8
+          quill.keyboard.bindings['Backspace'] = (quill.keyboard.bindings[BACKSPACE_KEY_CODE] || []).slice()
         }
         super(quill, options)
       }
@@ -49,6 +51,7 @@ export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el conteni
   const [tableCols, setTableCols] = useState(3)
   const [modules, setModules] = useState(null)
   const wrapperRef = useRef(null)
+  const isInsertingTable = useRef(false)
 
   // stableValue: lo que pasamos a ReactQuill como prop value.
   // Solo se actualiza cuando el contenido cambia DESDE AFUERA del editor
@@ -109,9 +112,8 @@ export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el conteni
   }, [value])
 
   const handleChange = (content) => {
+    if (isInsertingTable.current) return
     lastReported.current = content
-    // NO actualizamos stableValue aquí — ReactQuill mantiene su propio estado interno.
-    // El padre recibe el nuevo contenido pero ReactQuill no se re-renderiza.
     onChange(content)
   }
 
@@ -119,8 +121,21 @@ export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el conteni
     if (!wrapperRef.current) return
     const container = wrapperRef.current.querySelector('.ql-container')
     if (!container || !container.__quill) return
-    const tableModule = container.__quill.getModule('better-table')
-    if (tableModule) tableModule.insertTable(tableRows, tableCols)
+    const quill = container.__quill
+    const tableModule = quill.getModule('better-table')
+    if (!tableModule) return
+
+    isInsertingTable.current = true
+    tableModule.insertTable(tableRows, tableCols)
+
+    // Report final state once after table operations settle,
+    // avoiding the insertTable → onChange → value prop → loop cycle
+    setTimeout(() => {
+      isInsertingTable.current = false
+      const html = quill.root.innerHTML
+      lastReported.current = html
+      onChange(html)
+    }, 100)
   }
 
   const handleHtmlChange = (e) => {

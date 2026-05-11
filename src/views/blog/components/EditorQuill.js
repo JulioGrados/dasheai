@@ -101,13 +101,11 @@ export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el conteni
     })
   }, [])
 
-  // Detecta cambios de value que vienen del padre (no de nuestro onChange)
-  // y los aplica al editor. Si el cambio vino de nuestro propio onChange,
-  // lastReported.current === value y no hacemos nada.
   useEffect(() => {
-    if (value !== lastReported.current) {
-      lastReported.current = value || ''
-      setStableValue(value || '')
+    const normalized = value || ''
+    if (normalized !== lastReported.current) {
+      lastReported.current = normalized
+      setStableValue(normalized)
     }
   }, [value])
 

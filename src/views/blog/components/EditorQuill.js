@@ -10,11 +10,23 @@ const ReactQuill = dynamic(
     const { default: QBT } = await import('quill-better-table')
     const { default: Quill } = await import('quill')
 
-    // Registering QBT as a module type causes Quill to call QBT.register() (static),
-    // which registers all table blots so table HTML persists in the editor.
-    // We deliberately omit 'better-table' from the instance modules config so the
-    // instance constructor never runs — it is the source of the addRange loop.
     if (!Quill.imports['modules/better-table']) {
+      // QBT.register() must be called explicitly — it does NOT run at import time.
+      QBT.register()
+
+      // QBT was compiled against Quill v2-dev. Parchment v1's Registry.query checks:
+      //   (scope & Scope.LEVEL & blot.scope) && (scope & Scope.TYPE & blot.scope)
+      // Container-based QBT blots inherit no scope from Parchment's ContainerBlot
+      // → query returns null → "Unable to create table blot" during optimize().
+      // Fix: set BLOCK_BLOT_SCOPE (10) on each affected blot class so the lookup succeeds.
+      const BLOCK_BLOT_SCOPE = 10
+      ;['formats/table', 'formats/table-row', 'formats/table-body',
+        'formats/table-col-group', 'formats/table-container', 'formats/table-view'
+      ].forEach(path => {
+        const blot = Quill.import(path)
+        if (blot && blot.scope == null) blot.scope = BLOCK_BLOT_SCOPE
+      })
+
       Quill.register({ 'modules/better-table': QBT }, true)
     }
 
@@ -41,26 +53,6 @@ const getQuill = (wrapperRef) => {
   return (container && container.__quill) ? container.__quill : null
 }
 
-const generateId = () => Math.random().toString(36).substr(2, 9)
-
-const buildTableHTML = (rows, cols) => {
-  let html = '<table class="quill-better-table"><colgroup>'
-  for (let c = 0; c < cols; c++) html += '<col width="150">'
-  html += '</colgroup><tbody>'
-  for (let r = 0; r < rows; r++) {
-    const rowId = `row-${generateId()}`
-    html += `<tr data-row="${rowId}">`
-    for (let c = 0; c < cols; c++) {
-      const cellId = `cell-${generateId()}`
-      html += `<td data-row="${rowId}" rowspan="1" colspan="1">`
-      html += `<p class="qlbt-cell-line" data-row="${rowId}" data-cell="${cellId}" data-rowspan="1" data-colspan="1"><br></p>`
-      html += '</td>'
-    }
-    html += '</tr>'
-  }
-  html += '</tbody></table>'
-  return html
-}
 
 export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el contenido del blog...' }) => {
   const [isHtmlMode, setIsHtmlMode] = useState(false)
@@ -70,9 +62,10 @@ export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el conteni
   const wrapperRef = useRef(null)
   const isInsertingTable = useRef(false)
 
-  // lockedValue never changes after mount — ReactQuill never gets a new value prop,
-  // eliminating the onChange → parent re-render → setContents → text-change loop.
-  const [lockedValue] = useState(value || '')
+  // editorHtml mirrors what Quill currently contains and is passed as value to ReactQuill.
+  // ReactQuill's componentDidUpdate compares value vs getEditorContents() — keeping them
+  // in sync prevents it from calling setEditorContents (which would wipe user edits).
+  const [editorHtml, setEditorHtml] = useState(value || '')
   const lastReported = useRef(value || '')
 
   useEffect(() => {
@@ -92,8 +85,7 @@ export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el conteni
         ['link', 'image', 'video'],
         ['clean']
       ],
-      // 'better-table' intentionally omitted — its constructor causes addRange errors.
-      // Blots are registered via QBT.register() (static) when the module type is registered above.
+      'better-table': true,
       history: {
         delay: 1000,
         maxStack: 50,
@@ -102,20 +94,18 @@ export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el conteni
     })
   }, [])
 
-  // External value changes (loading a different post) — update Quill directly,
-  // never via the value prop so ReactQuill never re-renders.
+  // External value changes (loading a different post) — update editorHtml so ReactQuill
+  // calls setEditorContents with the new content.
   useEffect(() => {
     const normalized = value || ''
     if (normalized === lastReported.current) return
     lastReported.current = normalized
-    const quill = getQuill(wrapperRef)
-    if (!quill) return
-    const delta = quill.clipboard.convert(normalized)
-    quill.setContents(delta)
+    setEditorHtml(normalized)
   }, [value])
 
   const handleChange = (content) => {
     if (isInsertingTable.current) return
+    setEditorHtml(content)
     lastReported.current = content
     onChange(content)
   }
@@ -124,19 +114,19 @@ export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el conteni
     const quill = getQuill(wrapperRef)
     if (!quill) return
 
-    const html = buildTableHTML(tableRows, tableCols)
-    const range = quill.getSelection(true)
-    const index = range ? range.index : quill.getLength()
+    const tableModule = quill.getModule('better-table')
+    if (!tableModule) return
 
     isInsertingTable.current = true
-    quill.clipboard.dangerouslyPasteHTML(index, html)
+    tableModule.insertTable(tableRows, tableCols)
 
     setTimeout(() => {
       isInsertingTable.current = false
       const finalHtml = quill.root.innerHTML
+      setEditorHtml(finalHtml)
       lastReported.current = finalHtml
       onChange(finalHtml)
-    }, 100)
+    }, 150)
   }
 
   const handleHtmlChange = (e) => {
@@ -219,7 +209,7 @@ export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el conteni
               ? (
                 <ReactQuill
                   theme='snow'
-                  value={lockedValue}
+                  value={editorHtml}
                   onChange={handleChange}
                   modules={modules}
                   formats={formats}

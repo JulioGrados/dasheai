@@ -38,14 +38,19 @@ if (!fs.existsSync(quillPath)) {
   const buggyAddRange = `          selection.removeAllRanges();
           selection.addRange(range);`
 
-  const fixedAddRange = `          selection.removeAllRanges();
-          try { selection.addRange(range); } catch (_) {}`
+  // Guard: only touch the browser selection when the range's node is in the document.
+  // Without this, removeAllRanges() clears the cursor and addRange fails silently,
+  // leaving the editor with no cursor and unable to accept input.
+  const fixedAddRange = `          if (range.startContainer && range.startContainer.isConnected !== false) {
+            selection.removeAllRanges();
+            try { selection.addRange(range); } catch (_) {}
+          }`
 
   if (content.includes(buggyAddRange)) {
     content = content.replace(buggyAddRange, fixedAddRange)
     fs.writeFileSync(quillPath, content, 'utf8')
     console.log('✓ quill patched: addRange wrapped in try-catch.')
-  } else if (content.includes(fixedAddRange)) {
+  } else if (content.includes('isConnected !== false')) {
     console.log('✓ quill already patched.')
   } else {
     console.warn('⚠ quill: patch target not found, may need manual review.')

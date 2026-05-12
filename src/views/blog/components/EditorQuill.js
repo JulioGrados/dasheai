@@ -14,11 +14,13 @@ const ReactQuill = dynamic(
       // QBT.register() must be called explicitly — it does NOT run at import time.
       QBT.register()
 
-      // QBT was compiled against Quill v2-dev. Parchment v1's Registry.query checks:
-      //   (scope & Scope.LEVEL & blot.scope) && (scope & Scope.TYPE & blot.scope)
-      // Container-based QBT blots inherit no scope from Parchment's ContainerBlot
-      // → query returns null → "Unable to create table blot" during optimize().
-      // Fix: set BLOCK_BLOT_SCOPE (10) on each affected blot class so the lookup succeeds.
+      const Container = Quill.import('blots/container')
+      const Block = Quill.import('blots/block')
+
+      // ── 1. Scope fix ──────────────────────────────────────────────────────────
+      // Parchment v1's Registry.query checks (scope & Scope.LEVEL & blot.scope) &&
+      // (scope & Scope.TYPE & blot.scope). Container-based QBT blots have scope=null
+      // → query returns null → "Unable to create table blot". Fix: BLOCK_BLOT = 10.
       const BLOCK_BLOT_SCOPE = 10
       ;['formats/table', 'formats/table-row', 'formats/table-body',
         'formats/table-col-group', 'formats/table-container', 'formats/table-view'
@@ -27,9 +29,8 @@ const ReactQuill = dynamic(
         if (blot && blot.scope == null) blot.scope = BLOCK_BLOT_SCOPE
       })
 
-      // QBT's optimize() calls this.enforceAllowedChildren() — a Parchment v2 method
-      // that doesn't exist in Parchment v1. Add it to both Container and Block prototypes
-      // so all QBT blots (Container-based and Block-based) can call it without throwing.
+      // ── 2. enforceAllowedChildren shim ───────────────────────────────────────
+      // QBT's optimize() calls this.enforceAllowedChildren() — a Parchment v2 method.
       const enforceAllowedChildren = function () {
         if (!this.statics.allowedChildren) return
         this.children.forEach(child => {
@@ -37,8 +38,6 @@ const ReactQuill = dynamic(
           child.unwrap()
         })
       }
-      const Container = Quill.import('blots/container')
-      const Block = Quill.import('blots/block')
       if (typeof Container.prototype.enforceAllowedChildren !== 'function') {
         Container.prototype.enforceAllowedChildren = enforceAllowedChildren
       }
@@ -46,35 +45,157 @@ const ReactQuill = dynamic(
         Block.prototype.enforceAllowedChildren = enforceAllowedChildren
       }
 
-      // TableRow.checkMerge() calls super.checkMerge() which doesn't exist in
-      // Parchment v1's ContainerBlot — rows never merge same row-id cells into one row.
+      // ── 3. checkMerge shim ────────────────────────────────────────────────────
+      // TableRow/TableCell.checkMerge() calls super.checkMerge() missing in Parchment v1.
       if (typeof Container.prototype.checkMerge !== 'function') {
         Container.prototype.checkMerge = function () {
           return this.next !== null && this.next.constructor === this.constructor
         }
       }
 
-      // Parchment v2 ContainerBlot.optimize() wraps in requiredContainer and merges
-      // adjacent same-type blots. Parchment v1 doesn't do either. TableBody needs to
-      // wrap in TableContainer, TableContainer in TableViewWrapper, and all three need
-      // to merge adjacent siblings so the table hierarchy collapses correctly.
-      ;['formats/table-body', 'formats/table-container', 'formats/table-view'].forEach(bPath => {
-        const blot = Quill.import(bPath)
-        if (!blot || blot.prototype._v2OptimizePatched) return
-        const orig = blot.prototype.optimize
-        blot.prototype.optimize = function (context) {
-          if (orig) orig.call(this, context)
+      // ── 4. Safe TableViewWrapper ──────────────────────────────────────────────
+      // TVW's constructor: Quill.find(scroll.domNode.parentNode). When Parchment v1 calls
+      // new TVW(domNode), scroll IS the domNode (DOM element), so scroll.domNode is
+      // undefined → crash. Fix: subclass from Parchment v1's Container (no constructor),
+      // copy TVW's prototype methods, re-register so Registry.create uses the safe class.
+      const TVW = Quill.import('formats/table-view')
+      class SafeTVW extends Container {}
+      Object.getOwnPropertyNames(TVW.prototype).forEach(name => {
+        if (name === 'constructor') return
+        const desc = Object.getOwnPropertyDescriptor(TVW.prototype, name)
+        if (desc) Object.defineProperty(SafeTVW.prototype, name, desc)
+      })
+      SafeTVW.blotName = TVW.blotName
+      SafeTVW.tagName = TVW.tagName
+      SafeTVW.className = TVW.className
+      SafeTVW.allowedChildren = TVW.allowedChildren
+      SafeTVW.defaultChild = TVW.defaultChild
+      SafeTVW.requiredContainer = TVW.requiredContainer
+      SafeTVW.scope = BLOCK_BLOT_SCOPE
+      SafeTVW.create = function () {
+        const node = document.createElement(SafeTVW.tagName)
+        if (SafeTVW.className) node.classList.add(SafeTVW.className)
+        return node
+      }
+
+      // Update cross-reference: TableContainer.requiredContainer pointed to old TVW
+      const TC = Quill.import('formats/table-container')
+      if (TC) {
+        TC.requiredContainer = SafeTVW
+        // Guard updateTableWidth: col.formats()['table-col'] can be undefined in Parchment v1.
+        // Read the width attribute directly from the DOM node instead.
+        TC.prototype.updateTableWidth = function () {
+          setTimeout(() => {
+            try {
+              const colGroup = this.colGroup()
+              if (!colGroup) return
+              const w = colGroup.children.reduce((sum, col) => {
+                const px = col.domNode ? parseInt(col.domNode.getAttribute('width') || 0, 10) : 0
+                return sum + (isNaN(px) ? 0 : px)
+              }, 0)
+              if (w > 0 && this.domNode) this.domNode.style.width = `${w}px`
+            } catch (_) {}
+          }, 0)
+        }
+      }
+
+      // ── 5. Merge-before-wrap optimize patches ─────────────────────────────────
+      // Parchment v2's Scroll.optimize() calls checkMerge() AFTER blot.optimize(),
+      // so blots can merge even after wrapping. Parchment v1 never calls checkMerge.
+      // QBT's TableRow.optimize() wraps in TableBody FIRST, then calls checkMerge —
+      // too late (this.next is null after wrap). Fix: merge adjacent same-type blots
+      // BEFORE wrapping. Applied to TableCell, TableRow, TableBody, TC, SafeTVW.
+
+      // Helper: merge all adjacent same-constructor siblings into this blot
+      const mergeSiblings = function () {
+        while (this.next !== null && this.next.constructor === this.constructor) {
+          if (!this.domNode || !this.domNode.parentNode) break
+          const toRemove = this.next
+          try {
+            toRemove.moveChildren(this)
+            toRemove.remove()
+          } catch (_) { break }
+        }
+      }
+
+      // TableCell: merge adjacent cells with same cell ID (multi-paragraph cells)
+      const TableCell = Quill.import('formats/table')
+      if (TableCell && !TableCell.prototype._v1MergeFix) {
+        const origTCopt = TableCell.prototype.optimize
+        TableCell.prototype.optimize = function (context) {
+          let nx = this.next
+          while (nx instanceof TableCell && this.children.head && nx.children.head) {
+            try {
+              const myFmt = this.children.head.formats()[this.children.head.statics.blotName]
+              const nxFmt = nx.children.head.formats()[nx.children.head.statics.blotName]
+              if (!myFmt || !nxFmt || myFmt.cell !== nxFmt.cell) break
+              const del = nx; nx = nx.next; del.moveChildren(this); del.remove()
+            } catch (_) { break }
+          }
+          origTCopt.call(this, context)
+        }
+        TableCell.prototype._v1MergeFix = true
+      }
+
+      // TableRow: replace optimize entirely — merge rows with same row ID before wrapping.
+      // Original optimize does: wrap→enforceAllowedChildren→checkMerge (wrong order).
+      const TableRow = Quill.import('formats/table-row')
+      if (TableRow && !TableRow.prototype._v1MergeFix) {
+        TableRow.prototype.optimize = function (context) {
+          if (!this.domNode || !this.domNode.parentNode) return
+          let nx = this.next
+          while (nx instanceof TableRow && this.children.head && nx.children.head) {
+            try {
+              const myRow = this.children.head.formats().row
+              const nxRow = nx.children.head.formats().row
+              if (myRow === undefined || myRow !== nxRow) break
+              const del = nx; nx = nx.next; del.moveChildren(this); del.remove()
+            } catch (_) { break }
+          }
           if (this.statics.requiredContainer &&
               !(this.parent instanceof this.statics.requiredContainer)) {
             this.wrap(this.statics.requiredContainer.blotName)
           }
-          if (this.next !== null && this.next.constructor === this.constructor) {
-            this.next.moveChildren(this)
-            this.next.remove()
+          this.enforceAllowedChildren()
+        }
+        TableRow.prototype._v1MergeFix = true
+      }
+
+      // TableBody: merge adjacent bodies, then wrap in TableContainer
+      const TableBody = Quill.import('formats/table-body')
+      if (TableBody && !TableBody.prototype._v1MergeFix) {
+        TableBody.prototype.optimize = function (context) {
+          if (!this.domNode || !this.domNode.parentNode) return
+          mergeSiblings.call(this)
+          if (this.statics.requiredContainer &&
+              !(this.parent instanceof this.statics.requiredContainer)) {
+            this.wrap(this.statics.requiredContainer.blotName)
           }
         }
-        blot.prototype._v2OptimizePatched = true
-      })
+        TableBody.prototype._v1MergeFix = true
+      }
+
+      // TableContainer: merge adjacent containers, then wrap in SafeTVW
+      if (TC && !TC.prototype._v1MergeFix) {
+        TC.prototype.optimize = function (context) {
+          if (!this.domNode || !this.domNode.parentNode) return
+          mergeSiblings.call(this)
+          if (this.statics.requiredContainer &&
+              !(this.parent instanceof this.statics.requiredContainer)) {
+            this.wrap(this.statics.requiredContainer.blotName)
+          }
+        }
+        TC.prototype._v1MergeFix = true
+      }
+
+      // SafeTVW: merge adjacent wrappers (no requiredContainer)
+      SafeTVW.prototype.optimize = function (context) {
+        if (!this.domNode || !this.domNode.parentNode) return
+        mergeSiblings.call(this)
+      }
+
+      // Re-register SafeTVW to replace TVW in Parchment v1's global Registry
+      Quill.register('formats/table-view', SafeTVW, true)
 
       Quill.register({ 'modules/better-table': QBT }, true)
     }

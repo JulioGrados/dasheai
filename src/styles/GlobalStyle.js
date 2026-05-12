@@ -245,4 +245,9 @@ export const GlobalStyle = createGlobalStyle`
   .ant-card-body {
     padding: 0px;
   }
+  .qlbt-col-tool,
+  .qlbt-selection-line,
+  .qlbt-operation-menu {
+    display: none !important;
+  }
 `

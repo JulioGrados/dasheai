@@ -301,81 +301,86 @@ export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el conteni
   // Also suppress QBT's right-click context menu entirely via a capture-phase listener.
   useEffect(() => {
     if (!modules) return
-    const quill = getQuill(wrapperRef)
-    if (!quill) return
 
-    const suppressContextMenu = (e) => e.stopImmediatePropagation()
-    quill.root.addEventListener('contextmenu', suppressContextMenu, true)
-
-    const betterTable = quill.getModule('better-table')
-    if (betterTable) {
-      betterTable.showTableTools = function (table) { this.table = table }
-    }
-
-    const clipboard = quill.getModule('clipboard')
-    if (!clipboard) return
-    const matchers = clipboard.matchers
-    const tdIdx = matchers ? matchers.findIndex(([sel]) => sel === 'td') : -1
-    if (tdIdx === -1) return
-    matchers[tdIdx] = ['td', function (node, delta) {
-      const row = node.parentNode
-      const tableParent = row && row.parentNode
-      const table = tableParent && tableParent.tagName === 'TABLE'
-        ? tableParent
-        : (tableParent && tableParent.parentNode)
-      const rows = table ? Array.from(table.querySelectorAll('tr')) : (row ? [row] : [])
-      const cells = row ? Array.from(row.querySelectorAll('td')) : [node]
-      const rowId = rows.indexOf(row) + 1
-      const cellId = cells.indexOf(node) + 1
-      const colspan = node.getAttribute('colspan') || false
-      const rowspan = node.getAttribute('rowspan') || false
-      const Delta = delta.constructor
-
-      if (delta.length() === 0) {
-        return new Delta().insert('\n', {
-          'table-cell-line': { row: rowId, cell: cellId, rowspan, colspan }
-        })
+    const applyPatches = () => {
+      const quill = getQuill(wrapperRef)
+      if (!quill) {
+        setTimeout(applyPatches, 50)
+        return
       }
 
-      // Pass 1: split each string op at '\n' boundaries, adding table-cell-line to '\n' ops.
-      // Add a trailing '\n' if none present (the missing fix in QBT's matchTableCell).
-      let pass1 = delta.reduce((d, op) => {
-        if (op.insert && typeof op.insert === 'string') {
-          const lines = []
-          let insertStr = op.insert
-          let start = 0
-          for (let i = 0; i < insertStr.length; i++) {
-            if (insertStr.charAt(i) === '\n') {
-              if (i === 0) { lines.push('\n') } else { lines.push(insertStr.substring(start, i)); lines.push('\n') }
-              start = i + 1
-            }
-          }
-          const tailStr = insertStr.substring(start)
-          if (tailStr) lines.push(tailStr)
-          if (lines.indexOf('\n') < 0) lines.push('\n')
-          lines.forEach(text => {
-            text === '\n'
-              ? d.insert('\n', op.attributes)
-              : d.insert(text, op.attributes)
-          })
-        } else {
-          d.insert(op.insert, op.attributes)
-        }
-        return d
-      }, new Delta())
+      const suppressContextMenu = (e) => e.stopImmediatePropagation()
+      quill.root.addEventListener('contextmenu', suppressContextMenu, true)
 
-      // Pass 2: stamp table-cell-line on every '\n'-starting op.
-      return pass1.reduce((d, op) => {
-        if (op.insert && typeof op.insert === 'string' && op.insert.startsWith('\n')) {
-          d.insert(op.insert, Object.assign({}, op.attributes, {
+      const betterTable = quill.getModule('better-table')
+      if (betterTable) {
+        betterTable.showTableTools = function (table) { this.table = table }
+      }
+
+      const clipboard = quill.getModule('clipboard')
+      if (!clipboard) return
+      const matchers = clipboard.matchers
+      const tdIdx = matchers ? matchers.findIndex(([sel]) => sel === 'td') : -1
+      if (tdIdx === -1) return
+      matchers[tdIdx] = ['td', function (node, delta) {
+        const row = node.parentNode
+        const tableParent = row && row.parentNode
+        const table = tableParent && tableParent.tagName === 'TABLE'
+          ? tableParent
+          : (tableParent && tableParent.parentNode)
+        const rows = table ? Array.from(table.querySelectorAll('tr')) : (row ? [row] : [])
+        const cells = row ? Array.from(row.querySelectorAll('td')) : [node]
+        const rowId = rows.indexOf(row) + 1
+        const cellId = cells.indexOf(node) + 1
+        const colspan = node.getAttribute('colspan') || false
+        const rowspan = node.getAttribute('rowspan') || false
+        const Delta = delta.constructor
+
+        if (delta.length() === 0) {
+          return new Delta().insert('\n', {
             'table-cell-line': { row: rowId, cell: cellId, rowspan, colspan }
-          }))
-        } else {
-          d.insert(op.insert, op.attributes)
+          })
         }
-        return d
-      }, new Delta())
-    }]
+
+        let pass1 = delta.reduce((d, op) => {
+          if (op.insert && typeof op.insert === 'string') {
+            const lines = []
+            let insertStr = op.insert
+            let start = 0
+            for (let i = 0; i < insertStr.length; i++) {
+              if (insertStr.charAt(i) === '\n') {
+                if (i === 0) { lines.push('\n') } else { lines.push(insertStr.substring(start, i)); lines.push('\n') }
+                start = i + 1
+              }
+            }
+            const tailStr = insertStr.substring(start)
+            if (tailStr) lines.push(tailStr)
+            if (lines.indexOf('\n') < 0) lines.push('\n')
+            lines.forEach(text => {
+              text === '\n'
+                ? d.insert('\n', op.attributes)
+                : d.insert(text, op.attributes)
+            })
+          } else {
+            d.insert(op.insert, op.attributes)
+          }
+          return d
+        }, new Delta())
+
+        return pass1.reduce((d, op) => {
+          if (op.insert && typeof op.insert === 'string' && op.insert.startsWith('\n')) {
+            d.insert(op.insert, Object.assign({}, op.attributes, {
+              'table-cell-line': { row: rowId, cell: cellId, rowspan, colspan }
+            }))
+          } else {
+            d.insert(op.insert, op.attributes)
+          }
+          return d
+        }, new Delta())
+      }]
+    }
+
+    applyPatches()
   }, [modules])
 
   // External value changes (loading a different post) — update editorHtml so ReactQuill

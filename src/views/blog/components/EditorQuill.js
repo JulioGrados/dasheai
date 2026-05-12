@@ -115,13 +115,7 @@ const ReactQuill = dynamic(
         TC.prototype.updateTableWidth = function () {
           setTimeout(() => {
             try {
-              const colGroup = this.colGroup()
-              if (!colGroup) return
-              const w = colGroup.children.reduce((sum, col) => {
-                const px = col.domNode ? parseInt(col.domNode.getAttribute('width') || 0, 10) : 0
-                return sum + (isNaN(px) ? 0 : px)
-              }, 0)
-              if (w > 0 && this.domNode) this.domNode.style.width = `${w}px`
+              if (this.domNode) this.domNode.style.width = '100%'
             } catch (_) {}
           }, 0)
         }
@@ -410,22 +404,13 @@ export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el conteni
     tableModule.insertTable(tableRows, tableCols)
     isInsertingTable.current = false
 
-    // Distribute columns evenly across the usable editor width (excluding padding).
-    const editorStyle = window.getComputedStyle(quill.root)
-    const pl = parseFloat(editorStyle.paddingLeft) || 0
-    const pr = parseFloat(editorStyle.paddingRight) || 0
-    const containerWidth = quill.root.clientWidth - pl - pr
+    // Make the table fill 100% width with equal columns.
     const tables = quill.root.querySelectorAll('table')
     const table = tables[tables.length - 1]
-    if (table && containerWidth > 0) {
+    if (table) {
+      table.style.width = '100%'
       const cols = table.querySelectorAll('col')
-      const numCols = cols.length || tableCols
-      const base = Math.floor(containerWidth / numCols)
-      const remainder = containerWidth - base * numCols
-      cols.forEach((col, i) => {
-        col.setAttribute('width', base + (i === cols.length - 1 ? remainder : 0))
-      })
-      table.style.width = containerWidth + 'px'
+      cols.forEach(col => col.setAttribute('width', Math.floor(100 / (cols.length || 1))))
     }
 
     const finalHtml = quill.root.innerHTML

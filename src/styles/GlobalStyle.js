@@ -254,4 +254,8 @@ export const GlobalStyle = createGlobalStyle`
     width: 100% !important;
     overflow-x: hidden !important;
   }
+  table.quill-better-table {
+    width: 100% !important;
+    table-layout: fixed !important;
+  }
 `

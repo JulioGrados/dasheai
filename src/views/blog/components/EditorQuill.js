@@ -286,7 +286,16 @@ export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el conteni
         ['link', 'image', 'video'],
         ['clean']
       ],
-      'better-table': true,
+      'better-table': {
+        operationMenu: {
+          items: {
+            insertColumnRight: false,
+            insertColumnLeft: false,
+            insertRowUp: false,
+            insertRowDown: false,
+          }
+        }
+      },
       history: {
         delay: 1000,
         maxStack: 50,

@@ -11,6 +11,18 @@ const ReactQuill = dynamic(
     const { default: Quill } = await import('quill')
 
     if (!Quill.imports['modules/better-table']) {
+      // Array.prototype.at (ES2022) is used by QBT's ColumnTool — polyfill for older Safari/browsers.
+      if (!Array.prototype.at) {
+        // eslint-disable-next-line no-extend-native
+        Array.prototype.at = function (idx) {
+          const i = Math.trunc(idx) || 0
+          return this[i < 0 ? this.length + i : i]
+        }
+      }
+      if (typeof NodeList !== 'undefined' && !NodeList.prototype.at) {
+        NodeList.prototype.at = Array.prototype.at
+      }
+
       // QBT.register() must be called explicitly — it does NOT run at import time.
       QBT.register()
 
@@ -194,10 +206,13 @@ const ReactQuill = dynamic(
         mergeSiblings.call(this)
       }
 
-      // Re-register SafeTVW to replace TVW in Parchment v1's global Registry
-      Quill.register('formats/table-view', SafeTVW, true)
-
+      // Register the QBT module — this internally calls QBT.register() a second time,
+      // which re-registers the original TVW over SafeTVW. SafeTVW must be re-registered
+      // AFTER this line so it wins.
       Quill.register({ 'modules/better-table': QBT }, true)
+
+      // Re-register SafeTVW last so it overrides the TVW that QBT.register() just re-installed.
+      Quill.register('formats/table-view', SafeTVW, true)
     }
 
     return RQ

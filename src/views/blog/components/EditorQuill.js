@@ -23,6 +23,22 @@ const ReactQuill = dynamic(
         NodeList.prototype.at = Array.prototype.at
       }
 
+      // Parchment v1 LinkedList (used as blot.children) has no .at() — QBT calls it in
+      // ColumnTool.updateToolCells and several table operations. Patch via a temp Container.
+      const _ContainerForAt = Quill.import('blots/container')
+      const _tmpNode = document.createElement('div')
+      const _tmpBlot = new _ContainerForAt(_tmpNode)
+      const LinkedList = _tmpBlot.children.constructor
+      if (!LinkedList.prototype.at) {
+        LinkedList.prototype.at = function (idx) {
+          const i = Math.trunc(idx) || 0
+          let n = i < 0 ? this.length + i : i
+          let cur = this.head
+          while (cur && n > 0) { cur = cur.next; n-- }
+          return cur || undefined
+        }
+      }
+
       // QBT.register() must be called explicitly — it does NOT run at import time.
       QBT.register()
 

@@ -286,16 +286,7 @@ export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el conteni
         ['link', 'image', 'video'],
         ['clean']
       ],
-      'better-table': {
-        operationMenu: {
-          items: {
-            insertColumnRight: false,
-            insertColumnLeft: false,
-            insertRowUp: false,
-            insertRowDown: false,
-          }
-        }
-      },
+      'better-table': true,
       history: {
         delay: 1000,
         maxStack: 50,
@@ -307,10 +298,15 @@ export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el conteni
   // QBT's matchTableCell is missing the `'\n'` push that matchTableHeader has.
   // Without it, plain-text <td> cells never get the table-cell-line Delta attribute
   // and render as plain text. Replace the 'td' matcher once the editor is ready.
+  // Also suppress QBT's right-click context menu entirely via a capture-phase listener.
   useEffect(() => {
     if (!modules) return
     const quill = getQuill(wrapperRef)
     if (!quill) return
+
+    const suppressContextMenu = (e) => e.stopImmediatePropagation()
+    quill.root.addEventListener('contextmenu', suppressContextMenu, true)
+
     const clipboard = quill.getModule('clipboard')
     if (!clipboard) return
     const matchers = clipboard.matchers

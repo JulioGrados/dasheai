@@ -307,6 +307,11 @@ export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el conteni
     const suppressContextMenu = (e) => e.stopImmediatePropagation()
     quill.root.addEventListener('contextmenu', suppressContextMenu, true)
 
+    const betterTable = quill.getModule('better-table')
+    if (betterTable) {
+      betterTable.showTableTools = function (table) { this.table = table }
+    }
+
     const clipboard = quill.getModule('clipboard')
     if (!clipboard) return
     const matchers = clipboard.matchers

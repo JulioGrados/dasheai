@@ -406,13 +406,23 @@ export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el conteni
     const tableModule = quill.getModule('better-table')
     if (!tableModule) return
 
-    // Block handleChange during insertTable so intermediate optimize-cycle
-    // text-change events don't trigger parent re-renders before we're done.
     isInsertingTable.current = true
     tableModule.insertTable(tableRows, tableCols)
-    // updateContents + optimize run synchronously, so the table DOM is fully
-    // built the moment insertTable() returns. Capture immediately.
     isInsertingTable.current = false
+
+    // Distribute columns evenly across the full editor width.
+    const containerWidth = quill.root.clientWidth
+    const tables = quill.root.querySelectorAll('table')
+    const table = tables[tables.length - 1]
+    if (table && containerWidth > 0) {
+      const cols = table.querySelectorAll('col')
+      const base = Math.floor(containerWidth / tableCols)
+      const remainder = containerWidth - base * tableCols
+      cols.forEach((col, i) => {
+        col.setAttribute('width', base + (i === cols.length - 1 ? remainder : 0))
+      })
+      table.style.width = containerWidth + 'px'
+    }
 
     const finalHtml = quill.root.innerHTML
     setEditorHtml(finalHtml)

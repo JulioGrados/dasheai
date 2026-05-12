@@ -410,14 +410,18 @@ export const EditorQuill = ({ value, onChange, placeholder = 'Escribe el conteni
     tableModule.insertTable(tableRows, tableCols)
     isInsertingTable.current = false
 
-    // Distribute columns evenly across the full editor width.
-    const containerWidth = quill.root.clientWidth
+    // Distribute columns evenly across the usable editor width (excluding padding).
+    const editorStyle = window.getComputedStyle(quill.root)
+    const pl = parseFloat(editorStyle.paddingLeft) || 0
+    const pr = parseFloat(editorStyle.paddingRight) || 0
+    const containerWidth = quill.root.clientWidth - pl - pr
     const tables = quill.root.querySelectorAll('table')
     const table = tables[tables.length - 1]
     if (table && containerWidth > 0) {
       const cols = table.querySelectorAll('col')
-      const base = Math.floor(containerWidth / tableCols)
-      const remainder = containerWidth - base * tableCols
+      const numCols = cols.length || tableCols
+      const base = Math.floor(containerWidth / numCols)
+      const remainder = containerWidth - base * numCols
       cols.forEach((col, i) => {
         col.setAttribute('width', base + (i === cols.length - 1 ? remainder : 0))
       })

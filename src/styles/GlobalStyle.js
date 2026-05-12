@@ -250,4 +250,8 @@ export const GlobalStyle = createGlobalStyle`
   .qlbt-operation-menu {
     display: none !important;
   }
+  .quill-better-table-wrapper {
+    width: 100% !important;
+    overflow-x: hidden !important;
+  }
 `
